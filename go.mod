@@ -1,4 +1,4 @@
-module github.com/laurentganne/yorcoicd
+module github.com/laurentganne/yorcoidc
 
 go 1.15
 
