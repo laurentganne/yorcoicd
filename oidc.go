@@ -68,11 +68,11 @@ type Client interface {
 	ExchangeToken(ctx context.Context, accessToken string) (string, string, error)
 	// IsAccessTokenValid checks if an access token is still valid
 	IsAccessTokenValid(ctx context.Context, accessToken string) (bool, error)
-	// RefreshToken refreshes a token to get a new access and a refresh token for this client
-	RefreshToken(ctx context.Context, refreshToken string) (string, string, error)
-	// GetAccessToken returns the exchanged (and refreshed) access token
+	// RefreshToken refreshes the access token
+	RefreshToken(ctx context.Context) (string, string, error)
+	// GetAccessToken returns the access token
 	GetAccessToken() (string, error)
-	// GetAccessToken returns the exchanged (and refreshed) refresh token
+	// GetRefreshToken returns the refresh token
 	GetRefreshToken() (string, error)
 	// GetUserInfo returns info on the user (name, attributes, etc..)
 	GetUserInfo(ctx context.Context, accessToken string) (UserInfo, error)
@@ -176,8 +176,16 @@ func (c *aaiClient) ExchangeToken(ctx context.Context, accessToken string) (stri
 	return result.AccessToken, result.RefreshToken, err
 }
 
-// RefreshToken refreshes a token to get a new access and a refresh token for this client
-func (c *aaiClient) RefreshToken(ctx context.Context, refreshToken string) (string, string, error) {
+// RefreshToken refreshes the access token
+func (c *aaiClient) RefreshToken(ctx context.Context) (string, string, error) {
+
+	refreshToken, err := c.GetRefreshToken()
+	if err != nil {
+		return "", "", err
+	}
+	if refreshToken == "" {
+		return "", "", errors.Errorf("No refresh token defined yet in deployment %s", c.deploymentID)
+	}
 
 	res, err := c.keycloak.RefreshToken(ctx, refreshToken, c.clientID, c.clientSecret, c.realm)
 	if err != nil {
@@ -208,8 +216,8 @@ func (c *aaiClient) GetAccessToken() (string, error) {
 
 // GetRefreshToken returns the exchanged (and refreshed) access token
 func (c *aaiClient) GetRefreshToken() (string, error) {
-	_, accessToken, err := consulutil.GetStringValue(c.getRefreshTokenConsulPath())
-	return accessToken, err
+	_, refreshToken, err := consulutil.GetStringValue(c.getRefreshTokenConsulPath())
+	return refreshToken, err
 }
 
 func (c *aaiClient) getAccessTokenConsulPath() string {
