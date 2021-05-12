@@ -18,11 +18,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path"
 
 	"github.com/Nerzal/gocloak/v8"
 	"github.com/pkg/errors"
+	"github.com/ystia/yorc/v4/helper/consulutil"
 )
 
+const (
+	lexisInfo                   = "lexis"
+	accessTokenConsulAttribute  = "access_token"
+	refreshTokenConsulAttribute = "refresh_token"
+)
+
+// UserInfo provides details on the user info in an acess token
 type UserInfo struct {
 	Sub               string                         `json:"sub,omitempty"`
 	Name              string                         `json:"name,omitempty"`
@@ -59,14 +68,18 @@ type Client interface {
 	ExchangeToken(ctx context.Context, accessToken string) (string, string, error)
 	// IsAccessTokenValid checks if an access token is still valid
 	IsAccessTokenValid(ctx context.Context, accessToken string) (bool, error)
-	// GetUserInfo returns info on the user (name, attributes, etc..)
-	GetUserInfo(ctx context.Context, accessToken string) (UserInfo, error)
 	// RefreshToken refreshes a token to get a new access and a refresh token for this client
 	RefreshToken(ctx context.Context, refreshToken string) (string, string, error)
+	// GetAccessToken returns the exchanged (and refreshed) access token
+	GetAccessToken() (string, error)
+	// GetAccessToken returns the exchanged (and refreshed) refresh token
+	GetRefreshToken() (string, error)
+	// GetUserInfo returns info on the user (name, attributes, etc..)
+	GetUserInfo(ctx context.Context, accessToken string) (UserInfo, error)
 }
 
 // GetClient returns a client of the Authentication and Authorization Infrastructure service
-func GetClient(url, clientID, clientSecret, realm string) Client {
+func GetClient(deploymentID, url, clientID, clientSecret, realm string) Client {
 	keycloakClient := gocloak.NewClient(url)
 	aaiClient := aaiClient{
 		keycloak:     keycloakClient,
@@ -79,6 +92,7 @@ func GetClient(url, clientID, clientSecret, realm string) Client {
 }
 
 type aaiClient struct {
+	deploymentID string
 	keycloak     gocloak.GoCloak
 	clientID     string
 	clientSecret string
@@ -136,7 +150,7 @@ func (c *aaiClient) ExchangeToken(ctx context.Context, accessToken string) (stri
 	}
 
 	if res == nil {
-		return "", "", errors.Errorf("Unexpected empty response exchaning a token")
+		return "", "", errors.Errorf("Unexpected empty response exchaning a token for deployment %s", c.deploymentID)
 	}
 
 	if res.IsError() {
@@ -150,6 +164,15 @@ func (c *aaiClient) ExchangeToken(ctx context.Context, accessToken string) (stri
 		return "", "", errors.Errorf(errMsg)
 	}
 
+	err = consulutil.StoreConsulKeyAsString(c.getAccessTokenConsulPath(), result.AccessToken)
+	if err != nil {
+		return result.AccessToken, result.RefreshToken, errors.Wrapf(err, "Failed to store access token for deployment %s", c.deploymentID)
+	}
+	err = consulutil.StoreConsulKeyAsString(c.getRefreshTokenConsulPath(), result.RefreshToken)
+	if err != nil {
+		return result.AccessToken, result.RefreshToken, errors.Wrapf(err, "Failed to store refresh token for deployment %s", c.deploymentID)
+	}
+
 	return result.AccessToken, result.RefreshToken, err
 }
 
@@ -161,5 +184,38 @@ func (c *aaiClient) RefreshToken(ctx context.Context, refreshToken string) (stri
 		return "", "", err
 	}
 
+	// Store these values
+	err = consulutil.StoreConsulKeyAsString(c.getAccessTokenConsulPath(), res.AccessToken)
+	if err != nil {
+		return res.AccessToken, res.RefreshToken,
+			errors.Wrapf(err, "Failed to store access token for deployment %s", c.deploymentID)
+	}
+	err = consulutil.StoreConsulKeyAsString(c.getRefreshTokenConsulPath(),
+		res.RefreshToken)
+	if err != nil {
+		return res.AccessToken, res.RefreshToken,
+			errors.Wrapf(err, "Failed to store access token for deployment %s", c.deploymentID)
+	}
+
 	return res.AccessToken, res.RefreshToken, err
+}
+
+// GetAccessToken returns the exchanged (and refreshed) access token
+func (c *aaiClient) GetAccessToken() (string, error) {
+	_, accessToken, err := consulutil.GetStringValue(c.getAccessTokenConsulPath())
+	return accessToken, err
+}
+
+// GetRefreshToken returns the exchanged (and refreshed) access token
+func (c *aaiClient) GetRefreshToken() (string, error) {
+	_, accessToken, err := consulutil.GetStringValue(c.getRefreshTokenConsulPath())
+	return accessToken, err
+}
+
+func (c *aaiClient) getAccessTokenConsulPath() string {
+	return path.Join(consulutil.DeploymentKVPrefix, c.deploymentID, lexisInfo, accessTokenConsulAttribute)
+}
+
+func (c *aaiClient) getRefreshTokenConsulPath() string {
+	return path.Join(consulutil.DeploymentKVPrefix, c.deploymentID, lexisInfo, refreshTokenConsulAttribute)
 }
