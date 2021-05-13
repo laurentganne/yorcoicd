@@ -1,2 +1,2 @@
 # yorcoidc
-OpenID connect utilities used by Yorc LEXIS plugins
+OpenID connect client used by Yorc LEXIS plugins
