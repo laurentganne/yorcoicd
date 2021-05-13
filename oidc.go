@@ -82,6 +82,7 @@ type Client interface {
 func GetClient(deploymentID, url, clientID, clientSecret, realm string) Client {
 	keycloakClient := gocloak.NewClient(url)
 	aaiClient := aaiClient{
+		deploymentID: deploymentID,
 		keycloak:     keycloakClient,
 		clientID:     clientID,
 		clientSecret: clientSecret,
