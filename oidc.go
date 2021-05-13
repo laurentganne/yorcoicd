@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	lexisInfo                   = "lexis"
+	lexisInfo                   = ".lexis"
 	accessTokenConsulAttribute  = "access_token"
 	refreshTokenConsulAttribute = "refresh_token"
 )
